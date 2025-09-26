@@ -1,0 +1,74 @@
+import pandas as pd
+import numpy as np
+import re
+import string
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score
+from sklearn.pipeline import Pipeline
+
+# 1. Load the train and test datasets
+train_df = pd.read_csv('train.csv')
+test_df = pd.read_csv('test.csv')
+
+# 2. Data overview and preprocessing
+# Columns: Date, Top 1 to Top 25 (news headlines), Label (0/1) in train
+
+# Combine all Top 1 to Top 25 columns into one text feature by concatenation
+news_columns = [col for col in train_df.columns if col.startswith('Top')]
+
+def combine_news_text(df):
+    # Fill NaNs with empty string to avoid problems in concatenation
+    df[news_columns] = df[news_columns].fillna('')
+    combined_text = df[news_columns].apply(lambda x: ' '.join(x), axis=1)
+    return combined_text
+
+train_text = combine_news_text(train_df)
+test_text = combine_news_text(test_df)
+
+# Extract labels from train
+y = train_df['Label'].values
+
+# 3. Text Preprocessing Function (Optional: remove special characters, lowercase)
+def preprocess_text(text):
+    # Lowercase
+    text = text.lower()
+    # Remove punctuation and numbers
+    text = re.sub(r'[^a-z\s]', '', text)
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+train_text = train_text.apply(preprocess_text)
+test_text = test_text.apply(preprocess_text)
+
+# 4. Vectorize text using TF-IDF vectorizer
+tfidf_vectorizer = TfidfVectorizer(max_features=10000, ngram_range=(1,2))
+
+X_train_tfidf = tfidf_vectorizer.fit_transform(train_text)
+X_test_tfidf = tfidf_vectorizer.transform(test_text)
+
+# 5. Train a classification model, e.g. RandomForestClassifier or LogisticRegression or XGBClassifier
+# Split train data for validation
+X_tr, X_val, y_tr, y_val = train_test_split(X_train_tfidf, y, test_size=0.2, random_state=42, stratify=y)
+
+# Initialize model (RandomForest)
+clf = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1, class_weight='balanced')
+
+# Train model
+clf.fit(X_tr, y_tr)
+
+# Validate model
+val_preds = clf.predict(X_val)
+print("Validation F1 Score (weighted):", f1_score(y_val, val_preds, average='weighted'))
+
+# 6. Predict on the test set
+test_preds = clf.predict(X_test_tfidf)
+
+# 7. Save the predictions in required submission format
+submission = pd.DataFrame({'prediction': test_preds})
+submission.to_csv('submission.csv', index=False)
+
+print("Predictions saved to submission.csv")
